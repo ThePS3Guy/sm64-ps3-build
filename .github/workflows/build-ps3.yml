@@ -16,13 +16,14 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential git python3 make zip
+          sudo apt-get install -y build-essential git python3 make zip unzip curl
 
-      - name: Clone sm64-port source safely
+      - name: Download sm64-port source
         run: |
-          git clone --depth 1 https://github.com/sm64pc/sm64port.git sm64_src
-          cp -r sm64_src/* .
-          rm -rf sm64_src
+          curl -L https://github.com/sm64pc/sm64port/archive/refs/heads/master.zip -o sm64.zip
+          unzip -q sm64.zip
+          cp -r sm64port-master/* .
+          rm -rf sm64.zip sm64port-master
 
       - name: Prepare ROM asset
         run: |
