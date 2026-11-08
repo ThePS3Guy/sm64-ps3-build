@@ -32,8 +32,7 @@ jobs:
       - name: Package Output Files
         run: |
           mkdir -p pkg_out
-          # Derlenen çıktıları (örneğin rom veya elf dosyalarını) bulup pkg_out içine kopyala
-          find build/ -type f \( -name "*.elf" -o -name "*.bin" -o -name "*.z64" \) -exec cp {} pkg_out/ \;
+          find build/ -type f \( -name "*.elf" -o -name "*.bin" -o -name "*.z64" \) -exec cp {} pkg_out/ \; || true
           ls -la pkg_out/
 
       - name: Upload Artifacts
