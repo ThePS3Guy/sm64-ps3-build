@@ -16,18 +16,17 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential git python3 make zip libglew-dev libglfw3-dev
+          sudo apt-get install -y build-essential git python3 make zip unzip curl
 
-      - name: Clone sm64-port source
+      - name: Download sm64-port source
         run: |
-          # Resmi kaynak kodunu geçici bir klasöre çekip ana dizine taşıyalım
-          git clone https://github.com/sm64pc/sm64port.git sm64_src
-          cp -r sm64_src/* .
-          rm -rf sm64_src
+          curl -L https://github.com/sm64pc/sm64port/archive/refs/heads/main.zip -o sm64.zip
+          unzip -q sm64.zip
+          cp -r sm64port-main/* .
+          rm -rf sm64.zip sm64port-main
 
       - name: Prepare ROM asset
         run: |
-          # Yüklediğin ROM dosyasını kaynak kodun beklediği yere kopyala
           if [ -f "Super Mario 64 (USA).z64" ]; then
             cp "Super Mario 64 (USA).z64" baserom.us.z64
           fi
