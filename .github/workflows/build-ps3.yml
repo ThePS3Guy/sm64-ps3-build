@@ -25,16 +25,16 @@ jobs:
           fi
           ls -la
 
-      - name: Compile for PS3
+      - name: Compile for SM64
         run: |
-          make VERSION=us PLATFORM=ps3 -j$(nproc) || echo "Build script needs Makefile check"
+          make VERSION=us -j$(nproc)
 
-      - name: Package PKG Structure
+      - name: Package Output Files
         run: |
-          mkdir -p pkg_out/USRDIR
-          if [ -f "build/us_pc/sm64.us.elf" ]; then
-            cp build/us_pc/sm64.us.elf pkg_out/USRDIR/EBOOT.BIN
-          fi
+          mkdir -p pkg_out
+          # Derlenen çıktıları (örneğin rom veya elf dosyalarını) bulup pkg_out içine kopyala
+          find build/ -type f \( -name "*.elf" -o -name "*.bin" -o -name "*.z64" \) -exec cp {} pkg_out/ \;
+          ls -la pkg_out/
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
