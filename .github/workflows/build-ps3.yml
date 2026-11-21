@@ -1,130 +1,106 @@
+
 name: Build SM64 PS3 Port
 
 on:
   push:
-    branches: [ main, master ]
+    branches:
+      - main
+      - master
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
+    name: Compile Super Mario 64 for PS3
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Check ROM
         run: |
           set -e
-          sudo apt-get update
-          sudo apt-get install -y build-essential git python3 make zip unzip curl libaudiofile-dev
 
-      - name: Install PS3DEV and PSL1GHT toolchain
-        run: |
-          set -e
-          sudo mkdir -p /usr/local/ps3dev
-          python3 - <<'PY'
-          import json, re, urllib.request
-
-          req = urllib.request.Request(
-              "https://api.github.com/repos/ps3dev/ps3dev/releases?per_page=15",
-              headers={"User-Agent": "github-actions-sm64-ps3"}
-          )
-          with urllib.request.urlopen(req, timeout=30) as resp:
-              releases = json.loads(resp.read().decode("utf-8"))
-
-          chosen_url = None
-          chosen_name = None
-          for rel in releases:
-              for asset in rel.get("assets", []):
-                  name = asset.get("name", "")
-                  low = name.lower()
-                  if "linux" in low and ("x64" in low or "x86_64" in low or "amd64" in low) and low.endswith((".tar.gz", ".tar.xz", ".tar.bz2", ".zip")):
-                      chosen_url = asset["browser_download_url"]
-                      chosen_name = name
-                      break
-              if chosen_url:
-                  break
-
-          assert chosen_url, "Uygun Linux x64 ps3dev release arşivi bulunamadı."
-          with open("/tmp/ps3dev_asset.txt", "w") as f:
-              f.write(f"{chosen_name}\n{chosen_url}\n")
-          print("Seçilen paket:", chosen_name)
-          PY
-
-          ASSET_NAME=$(sed -n '1p' /tmp/ps3dev_asset.txt)
-          ASSET_URL=$(sed -n '2p' /tmp/ps3dev_asset.txt)
-          curl -fSL -A "Mozilla/5.0" "$ASSET_URL" -o "/tmp/$ASSET_NAME"
-
-          TMP_EXTRACT="/tmp/ps3dev_extract"
-          rm -rf "$TMP_EXTRACT"
-          mkdir -p "$TMP_EXTRACT"
-
-          case "$ASSET_NAME" in
-            *.tar.gz|*.tgz) tar -xzf "/tmp/$ASSET_NAME" -C "$TMP_EXTRACT" ;;
-            *.tar.xz)      tar -xJf "/tmp/$ASSET_NAME" -C "$TMP_EXTRACT" ;;
-            *.tar.bz2)     tar -xjf "/tmp/$ASSET_NAME" -C "$TMP_EXTRACT" ;;
-            *.zip)         unzip -q "/tmp/$ASSET_NAME" -d "$TMP_EXTRACT" ;;
-            *)             echo "Desteklenmeyen arşiv: $ASSET_NAME"; exit 1 ;;
-          esac
-
-          ENTRY_COUNT=$(find "$TMP_EXTRACT" -mindepth 1 -maxdepth 1 | wc -l)
-          FIRST_ENTRY=$(find "$TMP_EXTRACT" -mindepth 1 -maxdepth 1 | head -n 1)
-          if [ "$ENTRY_COUNT" -eq 1 ] && [ -d "$FIRST_ENTRY" ]; then
-            sudo cp -a "$FIRST_ENTRY"/. /usr/local/ps3dev/
-          else
-            sudo cp -a "$TMP_EXTRACT"/. /usr/local/ps3dev/
+          if [ ! -f "Super Mario 64 (USA).z64" ]; then
+            echo "ERROR: ROM file not found!"
+            exit 1
           fi
 
-          rm -rf "/tmp/$ASSET_NAME" "$TMP_EXTRACT" /tmp/ps3dev_asset.txt
+          echo "ROM found."
+          ls -lh "Super Mario 64 (USA).z64"
 
-          echo "PS3DEV=/usr/local/ps3dev" >> "$GITHUB_ENV"
-          echo "PSL1GHT=/usr/local/ps3dev" >> "$GITHUB_ENV"
-          echo "/usr/local/ps3dev/bin" >> "$GITHUB_PATH"
-          echo "/usr/local/ps3dev/ppu/bin" >> "$GITHUB_PATH"
-          echo "/usr/local/ps3dev/spu/bin" >> "$GITHUB_PATH"
-
-          ls -la /usr/local/ps3dev
-
-      - name: Download source safely
+      - name: Clone PS3 source
         run: |
           set -e
-          curl -fSL -A "Mozilla/5.0" "https://github.com/fgsfdsfgs/sm64-port/archive/refs/heads/ps3.zip" -o sm64.zip
-          unzip -tq sm64.zip
-          unzip -q sm64.zip
-          SRC_DIR=$(find . -maxdepth 1 -type d -name "sm64-port-*" | head -n 1)
-          test -n "$SRC_DIR"
-          cp -rn "$SRC_DIR"/* .
-          rm -rf sm64.zip "$SRC_DIR"
-          test -f Makefile
 
-      - name: Prepare ROM asset
+          git clone \
+            --branch ps3 \
+            --recursive \
+            https://github.com/fgsfdsfgs/sm64-port.git \
+            sm64-port
+
+          test -f sm64-port/Makefile
+
+      - name: Prepare ROM
         run: |
           set -e
-          test -f "Super Mario 64 (USA).z64"
-          cp "Super Mario 64 (USA).z64" baserom.us.z64
-          ls -lh baserom.us.z64
 
-      - name: Compile
+          cp "Super Mario 64 (USA).z64" \
+            sm64-port/baserom.us.z64
+
+          test -f sm64-port/baserom.us.z64
+
+      - name: Build PS3 version
         run: |
           set -e
-          export PS3DEV="/usr/local/ps3dev"
-          export PSL1GHT="/usr/local/ps3dev"
-          export PATH="$PATH:$PS3DEV/bin:$PS3DEV/ppu/bin:$PS3DEV/spu/bin"
-          export CPPFLAGS="-include cstdint"
-          export CXXFLAGS="-fpermissive -std=gnu++14 -include cstdint"
-          make VERSION=us -j$(nproc)
 
-      - name: Package Output Files
+          docker pull markstreet/sm64:ps3
+
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE/sm64-port:/sm64" \
+            -w /sm64 \
+            markstreet/sm64:ps3 \
+            make --jobs "$(nproc)"
+
+      - name: Verify build
         run: |
           set -e
+
+          OUTPUT="sm64-port/build/us_ps3"
+
+          if [ ! -f "$OUTPUT/sm64.us.f3dex2e.self" ]; then
+            echo "ERROR: PS3 SELF file was not generated!"
+            echo "Build directory contents:"
+            find sm64-port/build -maxdepth 3 -type f || true
+            exit 1
+          fi
+
+          echo "PS3 build successful!"
+          ls -lh "$OUTPUT"
+
+      - name: Package output
+        run: |
+          set -e
+
           mkdir -p pkg_out
-          find build/ -type f \( -name "*.elf" -o -name "*.bin" -o -name "*.self" -o -name "*.pkg" -o -name "sm64*" \) -exec cp {} pkg_out/ \;
-          ls -la pkg_out/
-          test "$(ls -A pkg_out)"
 
-      - name: Upload Artifacts
+          cp sm64-port/build/us_ps3/sm64.us.f3dex2e.self \
+            pkg_out/
+
+          if [ -f sm64-port/build/us_ps3/sm64.us.f3dex2e.pkg ]; then
+            cp sm64-port/build/us_ps3/sm64.us.f3dex2e.pkg \
+              pkg_out/
+          fi
+
+          ls -lh pkg_out/
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: sm64-ps3-output
           path: pkg_out/
+          if-no-files-found: error
+          retention-days: 14
