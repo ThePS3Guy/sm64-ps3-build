@@ -40,6 +40,7 @@ jobs:
       - name: Compile
         run: |
           set -e
+          export CXXFLAGS="-fpermissive -std=gnu++14"
           make VERSION=us -j$(nproc)
 
       - name: Package Output Files
