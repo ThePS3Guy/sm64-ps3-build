@@ -8,8 +8,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container:
-      image: ps3dev/ps3dev
 
     steps:
       - name: Checkout repository
@@ -18,11 +16,75 @@ jobs:
       - name: Install dependencies
         run: |
           set -e
-          if command -v sudo >/dev/null 2>&1; then
-            sudo apt-get update && sudo apt-get install -y build-essential git python3 make zip unzip curl libaudiofile-dev
+          sudo apt-get update
+          sudo apt-get install -y build-essential git python3 make zip unzip curl libaudiofile-dev
+
+      - name: Install PS3DEV and PSL1GHT toolchain
+        run: |
+          set -e
+          sudo mkdir -p /usr/local/ps3dev
+          python3 - <<'PY'
+          import json, re, urllib.request
+
+          req = urllib.request.Request(
+              "https://api.github.com/repos/ps3dev/ps3dev/releases?per_page=15",
+              headers={"User-Agent": "github-actions-sm64-ps3"}
+          )
+          with urllib.request.urlopen(req, timeout=30) as resp:
+              releases = json.loads(resp.read().decode("utf-8"))
+
+          chosen_url = None
+          chosen_name = None
+          for rel in releases:
+              for asset in rel.get("assets", []):
+                  name = asset.get("name", "")
+                  low = name.lower()
+                  if "linux" in low and ("x64" in low or "x86_64" in low or "amd64" in low) and low.endswith((".tar.gz", ".tar.xz", ".tar.bz2", ".zip")):
+                      chosen_url = asset["browser_download_url"]
+                      chosen_name = name
+                      break
+              if chosen_url:
+                  break
+
+          assert chosen_url, "Uygun Linux x64 ps3dev release arşivi bulunamadı."
+          with open("/tmp/ps3dev_asset.txt", "w") as f:
+              f.write(f"{chosen_name}\n{chosen_url}\n")
+          print("Seçilen paket:", chosen_name)
+          PY
+
+          ASSET_NAME=$(sed -n '1p' /tmp/ps3dev_asset.txt)
+          ASSET_URL=$(sed -n '2p' /tmp/ps3dev_asset.txt)
+          curl -fSL -A "Mozilla/5.0" "$ASSET_URL" -o "/tmp/$ASSET_NAME"
+
+          TMP_EXTRACT="/tmp/ps3dev_extract"
+          rm -rf "$TMP_EXTRACT"
+          mkdir -p "$TMP_EXTRACT"
+
+          case "$ASSET_NAME" in
+            *.tar.gz|*.tgz) tar -xzf "/tmp/$ASSET_NAME" -C "$TMP_EXTRACT" ;;
+            *.tar.xz)      tar -xJf "/tmp/$ASSET_NAME" -C "$TMP_EXTRACT" ;;
+            *.tar.bz2)     tar -xjf "/tmp/$ASSET_NAME" -C "$TMP_EXTRACT" ;;
+            *.zip)         unzip -q "/tmp/$ASSET_NAME" -d "$TMP_EXTRACT" ;;
+            *)             echo "Desteklenmeyen arşiv: $ASSET_NAME"; exit 1 ;;
+          esac
+
+          ENTRY_COUNT=$(find "$TMP_EXTRACT" -mindepth 1 -maxdepth 1 | wc -l)
+          FIRST_ENTRY=$(find "$TMP_EXTRACT" -mindepth 1 -maxdepth 1 | head -n 1)
+          if [ "$ENTRY_COUNT" -eq 1 ] && [ -d "$FIRST_ENTRY" ]; then
+            sudo cp -a "$FIRST_ENTRY"/. /usr/local/ps3dev/
           else
-            apt-get update && apt-get install -y build-essential git python3 make zip unzip curl libaudiofile-dev
+            sudo cp -a "$TMP_EXTRACT"/. /usr/local/ps3dev/
           fi
+
+          rm -rf "/tmp/$ASSET_NAME" "$TMP_EXTRACT" /tmp/ps3dev_asset.txt
+
+          echo "PS3DEV=/usr/local/ps3dev" >> "$GITHUB_ENV"
+          echo "PSL1GHT=/usr/local/ps3dev" >> "$GITHUB_ENV"
+          echo "/usr/local/ps3dev/bin" >> "$GITHUB_PATH"
+          echo "/usr/local/ps3dev/ppu/bin" >> "$GITHUB_PATH"
+          echo "/usr/local/ps3dev/spu/bin" >> "$GITHUB_PATH"
+
+          ls -la /usr/local/ps3dev
 
       - name: Download source safely
         run: |
@@ -46,12 +108,11 @@ jobs:
       - name: Compile
         run: |
           set -e
-          export PS3DEV="${PS3DEV:-/usr/local/ps3dev}"
-          export PSL1GHT="${PSL1GHT:-$PS3DEV/psl1ght}"
-          export PATH="$PATH:$PS3DEV/bin:$PS3DEV/ppu/bin:$PS3DEV/spu/bin:$PSL1GHT/bin"
+          export PS3DEV="/usr/local/ps3dev"
+          export PSL1GHT="/usr/local/ps3dev"
+          export PATH="$PATH:$PS3DEV/bin:$PS3DEV/ppu/bin:$PS3DEV/spu/bin"
           export CPPFLAGS="-include cstdint"
           export CXXFLAGS="-fpermissive -std=gnu++14 -include cstdint"
-          ls -ld "$PSL1GHT"
           make VERSION=us -j$(nproc)
 
       - name: Package Output Files
