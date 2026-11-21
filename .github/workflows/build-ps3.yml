@@ -1,64 +1,8 @@
-name: Build SM64 PS3 PKG and SELF
-
-on:
-  push:
-    branches:
-      - main
-      - master
-  workflow_dispatch:
-
-permissions:
-  contents: read
-
-jobs:
-  build:
-    name: Build PS3 PKG and SELF
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Check ROM
-        run: |
-          set -e
-
-          if [ ! -f "Super Mario 64 (USA).z64" ]; then
-            echo "ERROR: ROM file not found!"
-            exit 1
-          fi
-
-          echo "ROM found."
-
-      - name: Clone PS3 source
-        run: |
-          set -e
-
-          git clone \
-            --branch ps3 \
-            --recursive \
-            https://github.com/fgsfdsfgs/sm64-port.git \
-            sm64-port
-
-          test -f sm64-port/Makefile
-
-      - name: Prepare ROM
-        run: |
-          set -e
-
-          cp "Super Mario 64 (USA).z64" \
-            sm64-port/baserom.us.z64
-
-          test -s sm64-port/baserom.us.z64
-
-      - name: Pull PS3 Docker image
-        run: |
-          set -e
-          docker pull markstreet/sm64:ps3
-
       - name: Build PS3 SELF and PKG
         run: |
-          set -e
+          set -eux
+
+          docker pull markstreet/sm64:ps3
 
           docker run --rm \
             -v "$GITHUB_WORKSPACE/sm64-port:/sm64" \
@@ -67,67 +11,22 @@ jobs:
             sh -c '
               set -eu
 
-              echo "Starting PS3 build..."
+              echo "=== Building SELF ==="
 
               make --jobs 4
 
-              echo "Checking SELF..."
+              SELF="build/us_ps3/sm64.us.f3dex2e.self"
 
-              test -s build/us_ps3/sm64.us.f3dex2e.self
+              test -s "$SELF"
 
-              echo "Building PKG..."
+              echo "=== Building PKG ==="
 
-              make build/us_ps3/sm64.us.f3dex2e.pkg
+              make pkg
 
-              echo "Checking PKG..."
+              PKG="build/us_ps3/sm64.us.f3dex2e.pkg"
 
-              test -s build/us_ps3/sm64.us.f3dex2e.pkg
+              test -s "$PKG"
 
-              echo "Build completed successfully!"
+              echo "=== BUILD SUCCESS ==="
+              ls -lh "$SELF" "$PKG"
             '
-
-      - name: Verify build outputs
-        run: |
-          set -e
-
-          BUILD_DIR="sm64-port/build/us_ps3"
-
-          SELF="$BUILD_DIR/sm64.us.f3dex2e.self"
-          PKG="$BUILD_DIR/sm64.us.f3dex2e.pkg"
-
-          test -s "$SELF"
-          test -s "$PKG"
-
-          echo "SELF:"
-          ls -lh "$SELF"
-
-          echo "PKG:"
-          ls -lh "$PKG"
-
-      - name: Prepare download files
-        run: |
-          set -e
-
-          mkdir -p pkg_out
-
-          BUILD_DIR="sm64-port/build/us_ps3"
-
-          cp "$BUILD_DIR/sm64.us.f3dex2e.self" pkg_out/
-          cp "$BUILD_DIR/sm64.us.f3dex2e.pkg" pkg_out/
-
-          # Include additional PKG variants if generated.
-          find "$BUILD_DIR" -maxdepth 1 \
-            -type f -name "*.pkg" \
-            ! -name "sm64.us.f3dex2e.pkg" \
-            -exec cp {} pkg_out/ \;
-
-          echo "Final output:"
-          ls -lh pkg_out/
-
-      - name: Upload PS3 files
-        uses: actions/upload-artifact@v4
-        with:
-          name: SM64-PS3-FILES
-          path: pkg_out/
-          if-no-files-found: error
-          retention-days: 14
