@@ -21,11 +21,13 @@ jobs:
       - name: Download source safely
         run: |
           set -e
-          curl -fSL -A "Mozilla/5.0" "https://github.com/sm64pc/sm64port/archive/refs/heads/master.zip" -o sm64.zip
+          curl -fSL -A "Mozilla/5.0" "https://github.com/fgsfdsfgs/sm64-port/archive/refs/heads/ps3.zip" -o sm64.zip
           unzip -tq sm64.zip
           unzip -q sm64.zip
-          cp -r sm64port-master/* .
-          rm -rf sm64.zip sm64port-master
+          SRC_DIR=$(find . -maxdepth 1 -type d -name "sm64-port-*" | head -n 1)
+          test -n "$SRC_DIR"
+          cp -rn "$SRC_DIR"/* .
+          rm -rf sm64.zip "$SRC_DIR"
           test -f Makefile
 
       - name: Prepare ROM asset
