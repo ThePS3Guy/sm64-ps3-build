@@ -1,32 +1,90 @@
-      - name: Build PS3 SELF and PKG
+   name: Build SM64 PS3 SELF and PKG
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout workflow repository
+        uses: actions/checkout@v4
+
+      - name: Check baserom
         run: |
-          set -eux
+          if [ ! -f "baserom.us.z64" ]; then
+            echo "ERROR: baserom.us.z64 was not found in the repository root."
+            exit 1
+          fi
 
-          docker pull markstreet/sm64:ps3
+      - name: Clone SM64 PS3 port
+        run: |
+          git clone \
+            --branch ps3 \
+            --recursive \
+            https://github.com/sdiraimondo/sm64-ps3-port.git \
+            sm64-ps3-port
 
+      - name: Build PS3 Docker image
+        working-directory: sm64-ps3-port
+        run: docker build -t sm64_ps3 .
+
+      - name: Copy baserom
+        run: |
+          cp baserom.us.z64 sm64-ps3-port/baserom.us.z64
+
+      - name: Build PS3 SELF
+        run: |
           docker run --rm \
-            -v "$GITHUB_WORKSPACE/sm64-port:/sm64" \
+            -v "$GITHUB_WORKSPACE/sm64-ps3-port:/sm64" \
             -w /sm64 \
-            markstreet/sm64:ps3 \
-            sh -c '
-              set -eu
+            sm64_ps3 make --jobs 4
 
-              echo "=== Building SELF ==="
+      - name: Check SELF
+        run: |
+          SELF="sm64-ps3-port/build/us_ps3/sm64.us.f3dex2e.self"
 
-              make --jobs 4
+          if [ ! -s "$SELF" ]; then
+            echo "ERROR: SELF file was not generated."
+            find sm64-ps3-port/build -type f -print || true
+            exit 1
+          fi
 
-              SELF="build/us_ps3/sm64.us.f3dex2e.self"
+          echo "SELF created successfully."
 
-              test -s "$SELF"
+      - name: Build PS3 PKG
+        run: |
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE/sm64-ps3-port:/sm64" \
+            -w /sm64 \
+            sm64_ps3 make pkg
 
-              echo "=== Building PKG ==="
+      - name: Check PKG
+        run: |
+          PKG="sm64-ps3-port/build/us_ps3/sm64.us.f3dex2e.pkg"
 
-              make pkg
+          if [ ! -s "$PKG" ]; then
+            echo "ERROR: PKG file was not generated."
+            find sm64-ps3-port/build -type f -print || true
+            exit 1
+          fi
 
-              PKG="build/us_ps3/sm64.us.f3dex2e.pkg"
+          echo "PKG created successfully."
+          ls -lh "$PKG"
 
-              test -s "$PKG"
-
-              echo "=== BUILD SUCCESS ==="
-              ls -lh "$SELF" "$PKG"
-            '
+      - name: Upload SELF and PKG
+        uses: actions/upload-artifact@v4
+        with:
+          name: SM64-PS3-Build
+          path: |
+            sm64-ps3-port/build/us_ps3/*.self
+            sm64-ps3-port/build/us_ps3/*.pkg
+          if-no-files-found: error
