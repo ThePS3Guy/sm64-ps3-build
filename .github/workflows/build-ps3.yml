@@ -22,8 +22,13 @@ jobs:
       - name: Check ROM
         run: |
           set -e
-          test -f "Super Mario 64 (USA).z64"
-          echo "ROM found"
+
+          if [ ! -f "Super Mario 64 (USA).z64" ]; then
+            echo "ERROR: ROM file not found!"
+            exit 1
+          fi
+
+          echo "ROM found."
 
       - name: Clone PS3 source
         run: |
@@ -32,7 +37,7 @@ jobs:
           git clone \
             --branch ps3 \
             --recursive \
-            https://github.com/sdiraimondo/sm64-ps3-port.git \
+            https://github.com/fgsfdsfgs/sm64-port.git \
             sm64-port
 
           test -f sm64-port/Makefile
@@ -44,28 +49,61 @@ jobs:
           cp "Super Mario 64 (USA).z64" \
             sm64-port/baserom.us.z64
 
-      - name: Build PS3 PKG
+          test -f sm64-port/baserom.us.z64
+
+      - name: Download Docker image
         run: |
           set -e
 
           docker pull markstreet/sm64:ps3
 
+      - name: Check build environment
+        run: |
+          set -e
+
+          docker run --rm \
+            markstreet/sm64:ps3 \
+            sh -lc '
+              echo "Checking build tools..."
+
+              command -v make
+              command -v python || true
+              command -v python2 || true
+              command -v python2.7 || true
+              command -v pkg-config || true
+
+              echo "Environment check completed."
+            '
+
+      - name: Build PS3 PKG
+        run: |
+          set -e
+
           docker run --rm \
             -v "$GITHUB_WORKSPACE/sm64-port:/sm64" \
             -w /sm64 \
             markstreet/sm64:ps3 \
-            sh -c '
+            sh -lc '
               set -eux
 
-              echo "Starting PS3 build..."
+              if ! command -v python2.7 >/dev/null 2>&1; then
+                if command -v apt-get >/dev/null 2>&1; then
+                  apt-get update
+                  apt-get install -y python2.7
+                else
+                  echo "Python 2.7 is missing and apt-get is unavailable."
+                  exit 1
+                fi
+              fi
 
-              make clean || true
+              python2.7 --version
 
-              make VERSION=us pkg --jobs 4
+              echo "Starting PS3 PKG build..."
 
-              echo "Build completed."
+              make --jobs 4 \
+                build/us_ps3/sm64.us.f3dex2e.pkg
 
-              find build/us_ps3 -maxdepth 3 -type f -print
+              echo "Build finished."
             '
 
       - name: Verify PKG
@@ -75,15 +113,19 @@ jobs:
           PKG="sm64-port/build/us_ps3/sm64.us.f3dex2e.pkg"
 
           if [ ! -s "$PKG" ]; then
-            echo "PKG not found!"
-            find sm64-port/build -type f || true
+            echo "ERROR: PKG file was not generated!"
+
+            find sm64-port/build \
+              -maxdepth 4 \
+              -type f || true
+
             exit 1
           fi
 
-          echo "PKG successfully generated!"
+          echo "PKG generated successfully!"
           ls -lh "$PKG"
 
-      - name: Prepare artifact
+      - name: Prepare output
         run: |
           set -e
 
@@ -92,6 +134,8 @@ jobs:
           cp \
             sm64-port/build/us_ps3/sm64.us.f3dex2e.pkg \
             pkg_out/
+
+          ls -lh pkg_out/
 
       - name: Upload PS3 PKG
         uses: actions/upload-artifact@v4
