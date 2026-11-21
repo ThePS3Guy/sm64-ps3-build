@@ -1,4 +1,4 @@
-name: Build SM64 PS3 PKG
+name: Build SM64 PS3 PKG and SELF
 
 on:
   push:
@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   build:
-    name: Build PS3 PKG
+    name: Build PS3 PKG and SELF
     runs-on: ubuntu-latest
 
     steps:
@@ -49,33 +49,14 @@ jobs:
           cp "Super Mario 64 (USA).z64" \
             sm64-port/baserom.us.z64
 
-          test -f sm64-port/baserom.us.z64
+          test -s sm64-port/baserom.us.z64
 
-      - name: Download Docker image
+      - name: Pull PS3 Docker image
         run: |
           set -e
-
           docker pull markstreet/sm64:ps3
 
-      - name: Check build environment
-        run: |
-          set -e
-
-          docker run --rm \
-            markstreet/sm64:ps3 \
-            sh -lc '
-              echo "Checking build tools..."
-
-              command -v make
-              command -v python || true
-              command -v python2 || true
-              command -v python2.7 || true
-              command -v pkg-config || true
-
-              echo "Environment check completed."
-            '
-
-      - name: Build PS3 PKG
+      - name: Build PS3 SELF and PKG
         run: |
           set -e
 
@@ -83,64 +64,70 @@ jobs:
             -v "$GITHUB_WORKSPACE/sm64-port:/sm64" \
             -w /sm64 \
             markstreet/sm64:ps3 \
-            sh -lc '
-              set -eux
+            sh -c '
+              set -eu
 
-              if ! command -v python2.7 >/dev/null 2>&1; then
-                if command -v apt-get >/dev/null 2>&1; then
-                  apt-get update
-                  apt-get install -y python2.7
-                else
-                  echo "Python 2.7 is missing and apt-get is unavailable."
-                  exit 1
-                fi
-              fi
+              echo "Starting PS3 build..."
 
-              python2.7 --version
+              make --jobs 4
 
-              echo "Starting PS3 PKG build..."
+              echo "Checking SELF..."
 
-              make --jobs 4 \
-                build/us_ps3/sm64.us.f3dex2e.pkg
+              test -s build/us_ps3/sm64.us.f3dex2e.self
 
-              echo "Build finished."
+              echo "Building PKG..."
+
+              make build/us_ps3/sm64.us.f3dex2e.pkg
+
+              echo "Checking PKG..."
+
+              test -s build/us_ps3/sm64.us.f3dex2e.pkg
+
+              echo "Build completed successfully!"
             '
 
-      - name: Verify PKG
+      - name: Verify build outputs
         run: |
           set -e
 
-          PKG="sm64-port/build/us_ps3/sm64.us.f3dex2e.pkg"
+          BUILD_DIR="sm64-port/build/us_ps3"
 
-          if [ ! -s "$PKG" ]; then
-            echo "ERROR: PKG file was not generated!"
+          SELF="$BUILD_DIR/sm64.us.f3dex2e.self"
+          PKG="$BUILD_DIR/sm64.us.f3dex2e.pkg"
 
-            find sm64-port/build \
-              -maxdepth 4 \
-              -type f || true
+          test -s "$SELF"
+          test -s "$PKG"
 
-            exit 1
-          fi
+          echo "SELF:"
+          ls -lh "$SELF"
 
-          echo "PKG generated successfully!"
+          echo "PKG:"
           ls -lh "$PKG"
 
-      - name: Prepare output
+      - name: Prepare download files
         run: |
           set -e
 
           mkdir -p pkg_out
 
-          cp \
-            sm64-port/build/us_ps3/sm64.us.f3dex2e.pkg \
-            pkg_out/
+          BUILD_DIR="sm64-port/build/us_ps3"
 
+          cp "$BUILD_DIR/sm64.us.f3dex2e.self" pkg_out/
+          cp "$BUILD_DIR/sm64.us.f3dex2e.pkg" pkg_out/
+
+          # Include additional PKG variants if generated.
+          find "$BUILD_DIR" -maxdepth 1 \
+            -type f -name "*.pkg" \
+            ! -name "sm64.us.f3dex2e.pkg" \
+            -exec cp {} pkg_out/ \;
+
+          echo "Final output:"
           ls -lh pkg_out/
 
-      - name: Upload PS3 PKG
+      - name: Upload PS3 files
         uses: actions/upload-artifact@v4
         with:
-          name: SM64-PS3-PKG
-          path: pkg_out/*.pkg
+          name: SM64-PS3-FILES
+          path: pkg_out/
           if-no-files-found: error
           retention-days: 14
