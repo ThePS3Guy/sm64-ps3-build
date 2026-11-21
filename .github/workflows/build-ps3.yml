@@ -16,7 +16,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential git python3 make zip unzip curl
+          sudo apt-get install -y build-essential git python3 make zip unzip curl libaudiofile-dev
 
       - name: Download source safely
         run: |
@@ -40,7 +40,8 @@ jobs:
       - name: Compile
         run: |
           set -e
-          export CXXFLAGS="-fpermissive -std=gnu++14"
+          export CPPFLAGS="-include cstdint"
+          export CXXFLAGS="-fpermissive -std=gnu++14 -include cstdint"
           make VERSION=us -j$(nproc)
 
       - name: Package Output Files
