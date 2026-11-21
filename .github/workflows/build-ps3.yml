@@ -1,9 +1,10 @@
-
 name: Build SM64 PS3 PKG
 
 on:
   push:
-    branches: [main, master]
+    branches:
+      - main
+      - master
   workflow_dispatch:
 
 permissions:
@@ -11,6 +12,7 @@ permissions:
 
 jobs:
   build:
+    name: Build PS3 PKG
     runs-on: ubuntu-latest
 
     steps:
@@ -21,9 +23,9 @@ jobs:
         run: |
           set -e
           test -f "Super Mario 64 (USA).z64"
-          echo "ROM found."
+          echo "ROM found"
 
-      - name: Download PS3 source
+      - name: Clone PS3 source
         run: |
           set -e
 
@@ -38,6 +40,7 @@ jobs:
       - name: Prepare ROM
         run: |
           set -e
+
           cp "Super Mario 64 (USA).z64" \
             sm64-port/baserom.us.z64
 
@@ -51,8 +54,19 @@ jobs:
             -v "$GITHUB_WORKSPACE/sm64-port:/sm64" \
             -w /sm64 \
             markstreet/sm64:ps3 \
-            make --jobs 4 \
-            build/us_ps3/sm64.us.f3dex2e.pkg
+            sh -c '
+              set -eux
+
+              echo "Starting PS3 build..."
+
+              make clean || true
+
+              make VERSION=us pkg --jobs 4
+
+              echo "Build completed."
+
+              find build/us_ps3 -maxdepth 3 -type f -print
+            '
 
       - name: Verify PKG
         run: |
@@ -61,7 +75,7 @@ jobs:
           PKG="sm64-port/build/us_ps3/sm64.us.f3dex2e.pkg"
 
           if [ ! -s "$PKG" ]; then
-            echo "ERROR: PKG file not generated!"
+            echo "PKG not found!"
             find sm64-port/build -type f || true
             exit 1
           fi
@@ -69,13 +83,14 @@ jobs:
           echo "PKG successfully generated!"
           ls -lh "$PKG"
 
-      - name: Package output
+      - name: Prepare artifact
         run: |
           set -e
 
           mkdir -p pkg_out
 
-          cp sm64-port/build/us_ps3/sm64.us.f3dex2e.pkg \
+          cp \
+            sm64-port/build/us_ps3/sm64.us.f3dex2e.pkg \
             pkg_out/
 
       - name: Upload PS3 PKG
