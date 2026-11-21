@@ -18,29 +18,35 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential git python3 make zip unzip curl
 
-      - name: Download sm64-port source
+      - name: Download source safely
         run: |
-          curl -L https://github.com/sm64pc/sm64port/archive/refs/heads/master.zip -o sm64.zip
+          set -e
+          curl -fSL -A "Mozilla/5.0" "https://github.com/sm64pc/sm64port/archive/refs/heads/master.zip" -o sm64.zip
+          unzip -tq sm64.zip
           unzip -q sm64.zip
           cp -r sm64port-master/* .
           rm -rf sm64.zip sm64port-master
+          test -f Makefile
 
       - name: Prepare ROM asset
         run: |
-          if [ -f "Super Mario 64 (USA).z64" ]; then
-            cp "Super Mario 64 (USA).z64" baserom.us.z64
-          fi
-          ls -la
+          set -e
+          test -f "Super Mario 64 (USA).z64"
+          cp "Super Mario 64 (USA).z64" baserom.us.z64
+          ls -lh baserom.us.z64
 
-      - name: Compile for SM64
+      - name: Compile
         run: |
+          set -e
           make VERSION=us -j$(nproc)
 
       - name: Package Output Files
         run: |
+          set -e
           mkdir -p pkg_out
-          find build/ -type f \( -name "*.elf" -o -name "*.bin" -o -name "*.z64" \) -exec cp {} pkg_out/ \; || true
+          find build/ -type f \( -name "*.elf" -o -name "*.bin" -o -name "*.z64" -o -name "sm64*" \) -exec cp {} pkg_out/ \;
           ls -la pkg_out/
+          test "$(ls -A pkg_out)"
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
