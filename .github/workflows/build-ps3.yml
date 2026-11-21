@@ -8,6 +8,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    container:
+      image: ps3dev/ps3dev
 
     steps:
       - name: Checkout repository
@@ -15,8 +17,12 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential git python3 make zip unzip curl libaudiofile-dev
+          set -e
+          if command -v sudo >/dev/null 2>&1; then
+            sudo apt-get update && sudo apt-get install -y build-essential git python3 make zip unzip curl libaudiofile-dev
+          else
+            apt-get update && apt-get install -y build-essential git python3 make zip unzip curl libaudiofile-dev
+          fi
 
       - name: Download source safely
         run: |
@@ -40,15 +46,19 @@ jobs:
       - name: Compile
         run: |
           set -e
+          export PS3DEV="${PS3DEV:-/usr/local/ps3dev}"
+          export PSL1GHT="${PSL1GHT:-$PS3DEV/psl1ght}"
+          export PATH="$PATH:$PS3DEV/bin:$PS3DEV/ppu/bin:$PS3DEV/spu/bin:$PSL1GHT/bin"
           export CPPFLAGS="-include cstdint"
           export CXXFLAGS="-fpermissive -std=gnu++14 -include cstdint"
+          ls -ld "$PSL1GHT"
           make VERSION=us -j$(nproc)
 
       - name: Package Output Files
         run: |
           set -e
           mkdir -p pkg_out
-          find build/ -type f \( -name "*.elf" -o -name "*.bin" -o -name "*.z64" -o -name "sm64*" \) -exec cp {} pkg_out/ \;
+          find build/ -type f \( -name "*.elf" -o -name "*.bin" -o -name "*.self" -o -name "*.pkg" -o -name "sm64*" \) -exec cp {} pkg_out/ \;
           ls -la pkg_out/
           test "$(ls -A pkg_out)"
 
